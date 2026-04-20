@@ -36,7 +36,7 @@ cp .env.example .env
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-ваш-ключ-здесь
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-MODEL_NAME=openai/gpt-4o-mini:free
+MODEL_NAME=openai/gpt-4o-mini
 ```
 
 ### 4. Запустите бота
@@ -153,7 +153,7 @@ SYSTEM_PROMPT = """Ты — креативный копирайтер с чув�
 Список доступных моделей: [openrouter.ai/models](https://openrouter.ai/models)
 
 Примеры бесплатных моделей:
-- `openai/gpt-4o-mini:free`
+- `openai/gpt-4o-mini` (суффикс `:free` у OpenRouter часто даёт 404 — лучше обычная модель с балансом ключа)
 - `google/gemini-2.0-flash-exp:free`
 - `meta-llama/llama-3.1-8b-instruct:free`
 

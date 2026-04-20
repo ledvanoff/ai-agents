@@ -34,7 +34,7 @@ class ChatBot:
 
         api_key = os.getenv("OPENROUTER_API_KEY")
         base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        self.model_name = os.getenv("MODEL_NAME", "openai/gpt-4o-mini:free")
+        self.model_name = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
 
         if not api_key:
             console.print("[red]❌ Ошибка: OPENROUTER_API_KEY не найден в .env файле![/red]")
