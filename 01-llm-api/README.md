@@ -36,7 +36,7 @@ cp .env.example .env
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-ваш-ключ-здесь
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-MODEL_NAME=openai/gpt-4o-mini
+MODEL_NAME=openai/gpt-4o-mini:free
 ```
 
 ### 4. Запустите бота

@@ -22,7 +22,11 @@ console = Console()
 # Системный промпт - определяет роль и поведение ассистента
 # ЗАДАНИЕ: Вставьте сюда ваш системный промпт, который определит поведение бота
 # Например: "Ты — профессиональный банковский консультант..."
-SYSTEM_PROMPT = ""
+SYSTEM_PROMPT = """Ты — специалист технической поддержки IT-компании.
+Помогай пользователям решать проблемы с программным обеспечением.
+Задавай уточняющие вопросы, давай пошаговые инструкции.
+Используй простой язык без технического жаргона.
+Будь терпелив и эмпатичен к проблемам пользователей."""
 
 
 class ChatBot:
@@ -31,6 +35,10 @@ class ChatBot:
     def __init__(self):
         """Инициализация бота с загрузкой конфигурации."""
         load_dotenv()
+
+        # Стратегия 2 (Задание 4): порог по числу несистемных сообщений и сколько последних оставить.
+        self.history_summarize_threshold = int(os.getenv("HISTORY_SUMMARIZE_THRESHOLD", "12"))
+        self.history_keep_recent = int(os.getenv("HISTORY_KEEP_RECENT", "6"))
 
         api_key = os.getenv("OPENROUTER_API_KEY")
         base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
@@ -60,6 +68,77 @@ class ChatBot:
             "messages_count": 0,
         }
 
+    def _split_system_and_rest(self) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        """Системный промпт (если есть) и остальная история."""
+        if self.conversation_history and self.conversation_history[0].get("role") == "system":
+            return [self.conversation_history[0]], self.conversation_history[1:]
+        return [], list(self.conversation_history)
+
+    def _summarize_transcript(self, messages: List[Dict[str, str]]) -> str:
+        """Один вызов LLM: сжать переданные реплики в 2–3 предложения."""
+        lines: List[str] = []
+        for m in messages:
+            label = "Пользователь" if m["role"] == "user" else "Ассистент"
+            lines.append(f"{label}: {m['content']}")
+        blob = "\n".join(lines)
+        instruction = (
+            "Кратко резюмируй эту переписку в 2–3 предложениях по-русски. "
+            "Сохрани факты, цифры и договорённости. Без вступлений — только текст резюме."
+        )
+        summarizer_messages = [
+            {"role": "user", "content": f"{instruction}\n\n---\n{blob}"},
+        ]
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=summarizer_messages,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        if response.usage:
+            u = response.usage.model_dump()
+            self.session_metrics["total_prompt_tokens"] += u.get("prompt_tokens", 0)
+            self.session_metrics["total_completion_tokens"] += u.get("completion_tokens", 0)
+            self.session_metrics["total_tokens"] += u.get("total_tokens", 0)
+            self.session_metrics["messages_count"] += 1
+        return text
+
+    def summarize_history(self) -> None:
+        """
+        Стратегия 2: при длинной истории сжать старые реплики в резюме через LLM,
+        сохранить системный промпт и последние history_keep_recent несистемных сообщений.
+        """
+        system_msgs, others = self._split_system_and_rest()
+        if len(others) <= self.history_summarize_threshold:
+            return
+
+        # Оставляем «хвост» не длиннее порога, чтобы после сжатия снова не триггерить подряд.
+        keep = min(self.history_keep_recent, len(others) - 1)
+        keep = max(1, keep)
+        to_summarize = others[:-keep]
+        tail = others[-keep:]
+
+        if not to_summarize:
+            return
+
+        try:
+            summary = self._summarize_transcript(to_summarize)
+        except Exception as e:
+            console.print(f"[yellow]⚠ Не удалось получить резюме ({e}). Обрезаю старые реплики.[/yellow]")
+            self.conversation_history = system_msgs + tail
+            return
+
+        if not summary:
+            self.conversation_history = system_msgs + tail
+            return
+
+        compressed: List[Dict[str, str]] = [
+            {
+                "role": "user",
+                "content": "[Сжатый контекст ранее в диалоге]\n" + summary,
+            }
+        ] + tail
+        self.conversation_history = system_msgs + compressed
+        console.print("[dim]📎 История сжата: ранние реплики заменены резюме.[/dim]")
+
     def add_message(self, role: str, content: str):
         """Добавить сообщение в историю диалога."""
         self.conversation_history.append({
@@ -67,11 +146,9 @@ class ChatBot:
             "content": content
         })
 
-        # ЗАДАНИЕ 4: Реализуйте ограничение истории здесь
-        # Подсказка: оставляйте системный промпт + последние N сообщений
-        # MAX_MESSAGES = 10
-        # if len(self.conversation_history) > MAX_MESSAGES:
-        #     # Удалите старые сообщения, но сохраните системный промпт
+        _, others = self._split_system_and_rest()
+        if len(others) > self.history_summarize_threshold:
+            self.summarize_history()
 
     def clear_history(self):
         """Очистить историю диалога."""
